@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>동호회 출석 체크</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#f7f7f7; padding:20px; }
+    .box { max-width:420px; margin:auto; background:#fff; padding:20px;
+           border-radius:14px; box-shadow:0 10px 25px rgba(0,0,0,.08); }
+    button { width:100%; padding:14px; font-size:18px; border-radius:12px;
+             border:0; background:#2563eb; color:#fff; cursor:pointer; }
+    button:disabled { background:#999; }
+    pre { background:#f1f5f9; padding:12px; border-radius:10px; margin-top:14px; }
+    .small { font-size:12px; color:#555; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>📍 동호회 출석 체크</h2>
+    <button onclick="checkIn()">출석 완료</button>
+    <pre id="result">버튼을 눌러 출석하세요.</pre>
+    <div class="small">
+      ※ 버튼 클릭 시 1회성으로 위치·시간만 표시됩니다.<br>
+      ※ 상시 위치 추적은 하지 않습니다.
+    </div>
+  </div>
+
+<script>
+function checkIn() {
+  const out = document.getElementById("result");
+
+  if (!navigator.geolocation) {
+    out.textContent = "이 브라우저는 위치 기능을 지원하지 않습니다.";
+    return;
+  }
+
+  out.textContent = "위치 확인 중…";
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const now = new Date().toLocaleString();
+      out.textContent =
+        "출석 완료\n\n" +
+        "시간: " + now + "\n" +
+        "위도: " + pos.coords.latitude + "\n" +
+        "경도: " + pos.coords.longitude + "\n" +
+        "정확도(±m): " + Math.round(pos.coords.accuracy);
+    },
+    (err) => {
+      out.textContent =
+        "위치 확인 실패\n" +
+        err.message +
+        "\n\n※ 휴대폰에서는 Safari/Chrome 권장";
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+</script>
+</body>
+</html>
