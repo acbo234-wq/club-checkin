@@ -6,56 +6,182 @@
   <title>동호회 출석 체크</title>
   <style>
     body { font-family: system-ui, sans-serif; background:#f7f7f7; padding:20px; }
-    .box { max-width:420px; margin:auto; background:#fff; padding:20px;
+    .box { max-width:520px; margin:auto; background:#fff; padding:18px 18px 14px;
            border-radius:14px; box-shadow:0 10px 25px rgba(0,0,0,.08); }
+    label { font-size:13px; color:#444; display:block; margin-top:10px; }
+    input { width:100%; padding:12px; border:1px solid #ddd; border-radius:12px; font-size:16px; }
     button { width:100%; padding:14px; font-size:18px; border-radius:12px;
-             border:0; background:#2563eb; color:#fff; cursor:pointer; }
-    button:disabled { background:#999; }
-    pre { background:#f1f5f9; padding:12px; border-radius:10px; margin-top:14px; }
-    .small { font-size:12px; color:#555; margin-top:10px; }
+             border:0; background:#2563eb; color:#fff; cursor:pointer; margin-top:12px; }
+    button:disabled { background:#999; cursor:not-allowed; }
+    pre { background:#f1f5f9; padding:12px; border-radius:12px; margin-top:14px; white-space:pre-wrap; }
+    .small { font-size:12px; color:#555; margin-top:10px; line-height:1.4; }
+    .pill { display:inline-block; padding:4px 8px; background:#eef2ff; border-radius:999px; font-size:12px; color:#3730a3; }
+    .row { display:flex; gap:10px; }
+    .row > div { flex:1; }
+    .copybtn { margin-top:8px; background:#111827; }
   </style>
 </head>
 <body>
   <div class="box">
     <h2>📍 동호회 출석 체크</h2>
-    <button onclick="checkIn()">출석 완료</button>
-    <pre id="result">버튼을 눌러 출석하세요.</pre>
+
     <div class="small">
-      ※ 버튼 클릭 시 1회성으로 위치·시간만 표시됩니다.<br>
-      ※ 상시 위치 추적은 하지 않습니다.
+      <span class="pill" id="meta"></span>
+    </div>
+
+    <label>Knox ID (필수)</label>
+    <input id="knox" placeholder="예: seonhong.kim / abc123" autocomplete="off" />
+
+    <label>이름 (선택)</label>
+    <input id="name" placeholder="예: 김선홍" autocomplete="off" />
+
+    <div class="row">
+      <div>
+        <label>기기 토큰 (자동 생성, 폰 고유 넘버 대체)</label>
+        <input id="deviceToken" readonly />
+      </div>
+      <div style="max-width:170px;">
+        <label>&nbsp;</label>
+        <button class="copybtn" onclick="copyToken()">토큰 복사</button>
+      </div>
+    </div>
+
+    <button id="btn" onclick="checkIn()">출석 완료</button>
+
+    <pre id="out">안내: Knox ID 입력 후 버튼을 누르면 1회성으로 위치·시간이 확인됩니다.</pre>
+
+    <div class="small">
+      운영 포인트:
+      <br>• 동일 행사(eventId) 기준, 같은 Knox ID는 이 기기에서 1회만 처리됩니다(중복 방지).
+      <br>• 기기 토큰은 브라우저가 제공하는 “폰 고유 ID”가 불가하여 생성되는 대체 식별값입니다.
+      <br>• 출석 완료 화면을 캡처하여 제출하세요(감사 증적).
     </div>
   </div>
 
 <script>
-function checkIn() {
-  const out = document.getElementById("result");
+  // ---------- Helpers ----------
+  function qs(name, def="") {
+    const v = new URLSearchParams(location.search).get(name);
+    return (v === null || v === undefined || v === "") ? def : v;
+  }
+  function toFixed(n, d=6) { return (typeof n === "number") ? n.toFixed(d) : String(n); }
+  function uuid() {
+    return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4))).toString(16)
+    );
+  }
+  function setOut(msg) { document.getElementById("out").textContent = msg; }
 
-  if (!navigator.geolocation) {
-    out.textContent = "이 브라우저는 위치 기능을 지원하지 않습니다.";
-    return;
+  // ---------- Config ----------
+  const EVENT_ID = qs("eventId", "event"); // 필요하면 URL에 ?eventId=20260206 같이 붙여서 사용
+  const ACC_MAX = parseFloat(qs("accMax", "150")); // 정확도 허용치(±m)
+  document.getElementById("meta").textContent = `eventId=${EVENT_ID} | accMax=${ACC_MAX}m`;
+
+  // ---------- Device token (phone unique number alternative) ----------
+  const DEVICE_KEY = "club_device_token_v1";
+  let deviceToken = localStorage.getItem(DEVICE_KEY);
+  if (!deviceToken) {
+    deviceToken = uuid();
+    localStorage.setItem(DEVICE_KEY, deviceToken);
+  }
+  document.getElementById("deviceToken").value = deviceToken;
+
+  function normalizeKnox(s) {
+    return String(s || "").trim().toLowerCase();
+  }
+  function checkinKey(knoxId) {
+    return `checkin_${EVENT_ID}_${knoxId}`; // same event + same knox => one check-in per device
   }
 
-  out.textContent = "위치 확인 중…";
+  // ---------- Copy token ----------
+  async function copyToken() {
+    try {
+      await navigator.clipboard.writeText(deviceToken);
+      setOut("✅ 기기 토큰이 복사됐어.\n(대리 출석 방지용으로 캡처에도 함께 남겨줘)");
+    } catch (e) {
+      setOut("복사 권한이 막혀있어.\n토큰을 길게 눌러 직접 복사해줘:\n" + deviceToken);
+    }
+  }
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const now = new Date().toLocaleString();
-      out.textContent =
-        "출석 완료\n\n" +
-        "시간: " + now + "\n" +
-        "위도: " + pos.coords.latitude + "\n" +
-        "경도: " + pos.coords.longitude + "\n" +
-        "정확도(±m): " + Math.round(pos.coords.accuracy);
-    },
-    (err) => {
-      out.textContent =
-        "위치 확인 실패\n" +
-        err.message +
-        "\n\n※ 휴대폰에서는 Safari/Chrome 권장";
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
-}
+  // ---------- Main ----------
+  function checkIn() {
+    const btn = document.getElementById("btn");
+    btn.disabled = true;
+    btn.textContent = "위치 확인 중...";
+
+    const knox = normalizeKnox(document.getElementById("knox").value);
+    const name = document.getElementById("name").value.trim();
+
+    if (!knox) {
+      setOut("Knox ID를 입력해줘.");
+      btn.disabled = false; btn.textContent = "출석 완료";
+      return;
+    }
+
+    // Duplicate prevention (same device)
+    const k = checkinKey(knox);
+    if (localStorage.getItem(k) === "DONE") {
+      setOut("이미 이 기기에서 해당 행사 출석 완료 처리된 Knox ID야.\n(중복 출석 방지)\n\nknox: " + knox + "\ndeviceToken: " + deviceToken);
+      btn.textContent = "이미 완료";
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setOut("이 브라우저는 위치 기능을 지원하지 않아.");
+      btn.disabled = false; btn.textContent = "출석 완료";
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const now = new Date();
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const acc = pos.coords.accuracy;
+
+        if (Number.isFinite(ACC_MAX) && acc > ACC_MAX) {
+          setOut(
+            "GPS 정확도가 너무 낮아서 출석을 완료할 수 없어.\n" +
+            `정확도(±m): ${Math.round(acc)} / 허용: ${ACC_MAX}\n\n` +
+            "팁: 창가/야외에서 다시 시도하거나 위치 서비스를 켜고 재시도해줘."
+          );
+          btn.disabled = false; btn.textContent = "출석 완료";
+          return;
+        }
+
+        // Mark done (device-level)
+        localStorage.setItem(k, "DONE");
+
+        setOut(
+          "✅ 출석 완료\n\n" +
+          `eventId: ${EVENT_ID}\n` +
+          `knoxId: ${knox}\n` +
+          (name ? `name: ${name}\n` : "") +
+          `time: ${now.toLocaleString()}\n` +
+          `lat: ${toFixed(lat)}\n` +
+          `lng: ${toFixed(lng)}\n` +
+          `accuracy(±m): ${Math.round(acc)}\n\n` +
+          `deviceToken: ${deviceToken}\n` +
+          `userAgent: ${navigator.userAgent}\n\n` +
+          "이 화면을 캡처해서 제출하면 됩니다."
+        );
+
+        btn.textContent = "✅ 완료됨";
+      },
+      (err) => {
+        setOut(
+          "위치 획득 실패: " + err.message + "\n\n" +
+          "해결 팁:\n" +
+          "- 브라우저 위치 권한 허용\n" +
+          "- 휴대폰 위치 서비스 ON\n" +
+          "- 카톡 인앱 브라우저면 '브라우저에서 열기'\n" +
+          "- iPhone은 Safari, Android는 Chrome 권장"
+        );
+        btn.disabled = false; btn.textContent = "출석 완료";
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  }
 </script>
 </body>
 </html>
